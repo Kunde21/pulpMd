@@ -1,15 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/Kunde21/markdownfmt/markdown"
+	"github.com/pkg/errors"
 	bf "gopkg.in/russross/blackfriday.v2"
 )
 
@@ -17,6 +18,7 @@ var codeTags = map[string]string{
 	".go":   "go",
 	".js":   "js",
 	".json": "json",
+	".sh":   "shell",
 }
 
 func main() {
@@ -30,7 +32,6 @@ func main() {
 	unlinkSet := make([]*bf.Node, 0)
 	nodes := md.Parse(f)
 	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
-		fmt.Println(n, entering)
 		// snippet tags will only be in text nodes
 		if !entering || n.Type != bf.Text ||
 			!regex.Match(n.Literal) ||
@@ -41,8 +42,7 @@ func main() {
 
 		strs := regex.FindSubmatch(n.Literal)
 		mth := strs[1]
-		exts := bytes.Split(strs[3], []byte{','})
-		fmt.Println(exts)
+		exts := strings.Split(string(strs[3]), ",")
 		if len(mth) < 2 {
 			return bf.GoToNext
 		}
@@ -53,24 +53,14 @@ func main() {
 		}
 		var count int
 		for _, v := range matches {
-			tag, ok := codeTags[filepath.Ext(v)]
-			if !ok ||
-				(len(exts) > 0 && !inSlice([]byte(tag), exts)) {
-				continue
-			}
-			codeNode := bf.NewNode(bf.CodeBlock)
-			codeNode.CodeBlockData = bf.CodeBlockData{
-				IsFenced:    true,
-				FenceChar:   '`',
-				FenceLength: 3,
-				Info:        []byte(tag),
-			}
-			codeNode.Literal, err = ioutil.ReadFile(v)
+			node, err := codeNode(v, exts)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
+			}
+			if node == nil {
 				continue
 			}
-			n.Parent.InsertBefore(codeNode)
+			n.Parent.InsertBefore(node)
 			count++
 		}
 		// Remove leading blockquote if no code was added.
@@ -93,9 +83,29 @@ func main() {
 	out.Close()
 }
 
-func inSlice(needle []byte, haystack [][]byte) bool {
+func codeNode(file string, exts []string) (node *bf.Node, err error) {
+	tag, ok := codeTags[filepath.Ext(file)]
+	if !ok ||
+		(len(exts) > 0 && !inSlice(tag, exts)) {
+		return nil, nil
+	}
+	node = bf.NewNode(bf.CodeBlock)
+	node.CodeBlockData = bf.CodeBlockData{
+		IsFenced:    true,
+		FenceChar:   '`',
+		FenceLength: 3,
+		Info:        []byte(tag),
+	}
+	node.Literal, err = ioutil.ReadFile(file)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read code file %s", file)
+	}
+	return node, nil
+}
+
+func inSlice(needle string, haystack []string) bool {
 	for _, v := range haystack {
-		if bytes.Equal(needle, bytes.TrimSpace(v)) {
+		if needle == strings.TrimSpace(v) {
 			return true
 		}
 	}
