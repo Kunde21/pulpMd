@@ -37,7 +37,7 @@ var rootCmd = &cobra.Command{
 	Short: "Inject code snippets into markdown files",
 	Long: `Pulp Markdown is a code injector for your markdown files.
 Create and test your example code, then load it into your markdown pages.
-Useful when creating documentation and tutorials.`,
+Useful when generating documentation and creating tutorials.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cInj.injectCode()
 	},
@@ -88,7 +88,7 @@ func init() {
 }
 
 type codeInj struct {
-	md          *bf.Markdown
+	mdExt       bf.Extensions
 	target      string
 	inject      string
 	injectDir   string
@@ -173,8 +173,8 @@ func (ci *codeInj) Parse() *bf.Node {
 			ci.extensions = nil
 		}
 	}
-	ci.md = bf.New(bf.WithExtensions(bf.FencedCode | bf.Tables | bf.HeadingIDs))
-	return ci.md.Parse(f)
+	ci.mdExt = bf.FencedCode | bf.Tables | bf.HeadingIDs
+	return bf.New(bf.WithExtensions(ci.mdExt)).Parse(f)
 }
 
 func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
@@ -196,13 +196,23 @@ func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
 	}
 	var count int
 	for _, v := range matches {
-		node, err := codeNode(v, exts)
+		node, err := ci.createNode(v, exts)
 		if err != nil {
 			fmt.Println(err)
 		}
-		if node != nil {
+		switch {
+		case node == nil:
+		case node.Type == bf.CodeBlock:
 			n.Parent.InsertBefore(node)
 			count++
+		case node.Type == bf.Document:
+			cn := node.FirstChild.Next
+			for ; cn != nil; cn = cn.Next {
+				n.Parent.InsertBefore(cn.Prev)
+			}
+			n.Parent.InsertBefore(node.LastChild)
+			count++
+		default:
 		}
 	}
 	ci.UnlinkNode(n, count)
@@ -241,7 +251,7 @@ func (ci codeInj) Render(nodes *bf.Node) {
 	out.Close()
 }
 
-func codeNode(file string, exts []string) (node *bf.Node, err error) {
+func (ci *codeInj) createNode(file string, exts []string) (node *bf.Node, err error) {
 	tag, ok := codeTags[filepath.Ext(file)]
 	if !ok {
 		tag = strings.TrimPrefix(filepath.Ext(file), ".")
@@ -250,6 +260,13 @@ func codeNode(file string, exts []string) (node *bf.Node, err error) {
 	if len(exts) > 0 && !inSlice(tag, exts) {
 		return nil, nil
 	}
+	inject, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read code file %s", file)
+	}
+	if tag == "md" {
+		return bf.New(bf.WithExtensions(ci.mdExt)).Parse(inject), nil
+	}
 	node = bf.NewNode(bf.CodeBlock)
 	node.CodeBlockData = bf.CodeBlockData{
 		IsFenced:    true,
@@ -257,10 +274,7 @@ func codeNode(file string, exts []string) (node *bf.Node, err error) {
 		FenceLength: 3,
 		Info:        []byte(tag),
 	}
-	node.Literal, err = ioutil.ReadFile(file)
-	if err != nil {
-		return nil, errors.Wrapf(err, "read code file %s", file)
-	}
+	node.Literal = inject
 	return node, nil
 }
 
