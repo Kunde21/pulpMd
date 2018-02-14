@@ -51,10 +51,8 @@ func Execute() {
 }
 
 var codeTags = map[string]string{
-	".go":   "go",
-	".js":   "js",
-	".json": "json",
-	".sh":   "shell",
+	".sh":  "shell",
+	".cpp": "c++",
 }
 
 var (
@@ -77,10 +75,9 @@ func init() {
 	flags.BoolVarP(&norecur, "norecur", "r", false, "Don't search injectDir recursively")
 	flags.StringVarP(&cInj.output, "output", "o", "", "Output markdown file")
 	flags.StringArrayVarP(&cInj.extensions, "fileExt", "e", nil, "File extensions to inject")
-	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false,
-		"Don't delete snippet insert tags in markdown file.")
-	flags.BoolVarP(&cInj.leaveQuotes, "noquotes", "q", false,
-		"Don't delete block quote when no code was inserted below it.")
+	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false, "Leave snippet tags in markdown file.")
+	flags.BoolVarP(&cInj.leaveQuotes, "quotes", "q", false,
+		"Leave block quote when no code was inserted below it.")
 
 	//cobra.MarkFlagFilename(persistent, "inject")
 	cobra.MarkFlagFilename(flags, "output")
@@ -135,9 +132,6 @@ func (ci *codeInj) initConfig() {
 	if !norecur {
 		ci.injectDir = ci.injectDir + "/**"
 	}
-	if len(ci.extensions) > 0 {
-		ci.extensions = strings.Split(ci.extensions[0], ",")
-	}
 }
 
 func (ci *codeInj) injectCode() {
@@ -153,6 +147,7 @@ func (ci *codeInj) Parse() *bf.Node {
 		log.Fatal(err)
 	}
 	if len(ci.extensions) != 0 {
+		ci.extensions = strings.Split(ci.extensions[0], ",")
 		for k, v := range codeTags {
 			if !inSlice(k, ci.extensions) && !inSlice(v, ci.extensions) {
 				delete(codeTags, k)
@@ -161,6 +156,17 @@ func (ci *codeInj) Parse() *bf.Node {
 			if !inSlice(k, ci.extensions) && !inSlice(v, ci.extensions) {
 				delete(codeTags, k)
 			}
+		}
+		var count int
+		for _, v := range ci.extensions {
+			tags := strings.Split(v, ":")
+			if len(tags) == 2 {
+				codeTags[tags[0]] = tags[1]
+				count++
+			}
+		}
+		if count == len(ci.extensions) {
+			ci.extensions = nil
 		}
 	}
 	md := bf.New(bf.WithExtensions(bf.FencedCode | bf.Tables | bf.HeadingIDs))
@@ -233,8 +239,11 @@ func (ci codeInj) Render(nodes *bf.Node) {
 
 func codeNode(file string, exts []string) (node *bf.Node, err error) {
 	tag, ok := codeTags[filepath.Ext(file)]
-	// Not supported or not in extension filter list
-	if !ok || (len(exts) > 0 && !inSlice(tag, exts)) {
+	if !ok {
+		tag = strings.TrimPrefix(filepath.Ext(file), ".")
+	}
+	// Not in extension filter list
+	if len(exts) > 0 && !inSlice(tag, exts) {
 		return nil, nil
 	}
 	node = bf.NewNode(bf.CodeBlock)
