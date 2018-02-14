@@ -71,16 +71,17 @@ func init() {
 	flags.StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pulpMd.yaml)")
 
 	flags.StringVarP(&cInj.target, "target", "t", "", "Markdown target file")
-	// TODO: Add fenced snippet parsing
+	// TODO: Add fenced snippet parsing.
 	//persistent.StringVarP(&cInj.inject, "inject", "i", "", "Code file to source snippets")
 	flags.StringVarP(&cInj.injectDir, "injectDir", "d", ".", "Code directory to source snippets")
 	flags.BoolVarP(&norecur, "norecur", "r", false, "Don't search injectDir recursively")
 	flags.StringVarP(&cInj.output, "output", "o", "", "Output markdown file")
 	flags.StringArrayVarP(&cInj.extensions, "fileExt", "e", nil, "File extensions to inject")
-	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false,
-		"Don't delete snippet insert tags in markdown file.")
+	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false, "Leave snippet tags in markdown.")
+	// TODO: Add capability to parse and insert markdown snippets.
+	//flags.BoolVarP(&cInj.quoteMd, "block", "b", false, "Insert markdown as code block.")
 	flags.BoolVarP(&cInj.leaveQuotes, "noquotes", "q", false,
-		"Don't delete block quote when no code was inserted below it.")
+		"Leave block quote above empty snippet tag.")
 
 	//cobra.MarkFlagFilename(persistent, "inject")
 	cobra.MarkFlagFilename(flags, "output")
@@ -89,6 +90,7 @@ func init() {
 }
 
 type codeInj struct {
+	md          *bf.Markdown
 	target      string
 	inject      string
 	injectDir   string
@@ -96,6 +98,7 @@ type codeInj struct {
 	extensions  []string
 	leaveTags   bool
 	leaveQuotes bool
+	quoteMd     bool
 	snip        *regexp.Regexp
 	unlinkSet   []*bf.Node
 }
@@ -161,8 +164,8 @@ func (ci *codeInj) Parse() *bf.Node {
 			}
 		}
 	}
-	md := bf.New(bf.WithExtensions(bf.FencedCode | bf.Tables | bf.HeadingIDs))
-	return md.Parse(f)
+	ci.md = bf.New(bf.WithExtensions(bf.FencedCode | bf.Tables | bf.HeadingIDs))
+	return ci.md.Parse(f)
 }
 
 func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
@@ -198,12 +201,12 @@ func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
 }
 
 func (ci *codeInj) UnlinkNode(node *bf.Node, count int) {
+	// Remove leading blockquote if no code was added.
 	if !ci.leaveQuotes && count == 0 && node.Parent.Prev.Type == bf.BlockQuote {
-		// Remove leading blockquote if no code was added.
 		ci.unlinkSet = append(ci.unlinkSet, node.Parent.Prev)
 	}
+	// Remove snippet insert tag.
 	if !ci.leaveTags {
-		// Remove snippet insert tag.
 		ci.unlinkSet = append(ci.unlinkSet, node.Parent)
 	}
 }
