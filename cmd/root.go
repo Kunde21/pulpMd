@@ -37,6 +37,7 @@ var rootCmd = &cobra.Command{
 	Short: "Inject code snippets into markdown files",
 	Long: `Pulp Markdown is a code injector for your markdown files.
 Create and test your example code, then load it into your markdown pages.
+
 Useful when generating documentation and creating tutorials.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cInj.injectCode()
@@ -76,7 +77,7 @@ func init() {
 	flags.StringVarP(&cInj.output, "output", "o", "", "Output markdown file")
 	flags.StringArrayVarP(&cInj.extensions, "fileExt", "e", nil, "File extensions to inject")
 	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false, "Leave snippet tags in markdown file.")
-	// TODO: Add capability to parse and insert markdown snippets.
+	// TODO: Add capability to parse and insert markdown snippets as code blocks.
 	//flags.BoolVarP(&cInj.quoteMd, "block", "b", false, "Insert markdown as code block.")
 	flags.BoolVarP(&cInj.leaveQuotes, "quotes", "q", false,
 		"Leave block quote when no code was inserted below it.")
