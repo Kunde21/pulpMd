@@ -5,7 +5,7 @@
   branch = "master"
   name = "github.com/Kunde21/markdownfmt"
   packages = ["markdown"]
-  revision = "e89ee871a01215e5bb4ca11c0e96f9faf76a1f0f"
+  revision = "cecff1f292061cda5b4838503e04ea174e5301a5"
 
 [[projects]]
   name = "github.com/bmatcuk/doublestar"
