@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/Kunde21/markdownfmt/markdown"
+	"github.com/bmatcuk/doublestar"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -37,7 +38,9 @@ var rootCmd = &cobra.Command{
 	Long: `Pulp Markdown is a code injector for your markdown files.
 Create and test your example code, then load it into your markdown pages.
 Useful when creating documentation and tutorials.`,
-	Run: injectCode,
+	Run: func(cmd *cobra.Command, args []string) {
+		cInj.injectCode()
+	},
 }
 
 func Execute() {
@@ -47,8 +50,45 @@ func Execute() {
 	}
 }
 
+var codeTags = map[string]string{
+	".go":   "go",
+	".js":   "js",
+	".json": "json",
+	".sh":   "shell",
+}
+
 var (
-	cfgFile     string
+	cfgFile string
+	norecur bool
+	cInj    *codeInj
+)
+
+func init() {
+	cInj = NewCodeInject()
+	cobra.OnInitialize(cInj.initConfig)
+	flags := rootCmd.PersistentFlags()
+
+	flags.StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pulpMd.yaml)")
+
+	flags.StringVarP(&cInj.target, "target", "t", "", "Markdown target file")
+	// TODO: Add fenced snippet parsing
+	//persistent.StringVarP(&cInj.inject, "inject", "i", "", "Code file to source snippets")
+	flags.StringVarP(&cInj.injectDir, "injectDir", "d", ".", "Code directory to source snippets")
+	flags.BoolVarP(&norecur, "norecur", "r", false, "Don't search injectDir recursively")
+	flags.StringVarP(&cInj.output, "output", "o", "", "Output markdown file")
+	flags.StringArrayVarP(&cInj.extensions, "fileExt", "e", nil, "File extensions to inject")
+	flags.BoolVarP(&cInj.leaveTags, "notags", "n", false,
+		"Don't delete snippet insert tags in markdown file.")
+	flags.BoolVarP(&cInj.leaveQuotes, "noquotes", "q", false,
+		"Don't delete block quote when no code was inserted below it.")
+
+	//cobra.MarkFlagFilename(persistent, "inject")
+	cobra.MarkFlagFilename(flags, "output")
+	cobra.MarkFlagFilename(flags, "target")
+	cobra.MarkFlagRequired(flags, "target")
+}
+
+type codeInj struct {
 	target      string
 	inject      string
 	injectDir   string
@@ -56,28 +96,19 @@ var (
 	extensions  []string
 	leaveTags   bool
 	leaveQuotes bool
-)
+	snip        *regexp.Regexp
+	unlinkSet   []*bf.Node
+}
 
-func init() {
-	cobra.OnInitialize(initConfig)
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.pulpMd.yaml)")
-
-	rootCmd.PersistentFlags().StringVarP(&target, "target", "t", "", "Markdown target file")
-	rootCmd.PersistentFlags().StringVarP(&inject, "inject", "i", ".", "Code file to source snippets")
-	rootCmd.PersistentFlags().StringVarP(&output, "output", "o", "", "Output markdown file")
-	rootCmd.PersistentFlags().StringVarP(&injectDir, "injectDir", "d", ".", "Code directory to source snippets")
-	rootCmd.PersistentFlags().StringArrayVarP(&extensions, "fileExt", "e", nil, "File extensions to inject")
-	rootCmd.PersistentFlags().BoolVarP(&leaveTags, "notags", "n", false, "Don't delete snippet insert tags in markdown file.")
-	rootCmd.PersistentFlags().BoolVarP(&leaveQuotes, "noquotes", "q", false, "Don't delete block quote when no code was inserted below it.")
-
-	cobra.MarkFlagFilename(rootCmd.PersistentFlags(), "target")
-	cobra.MarkFlagFilename(rootCmd.PersistentFlags(), "inject")
-	cobra.MarkFlagRequired(rootCmd.PersistentFlags(), "target")
+func NewCodeInject() *codeInj {
+	return &codeInj{
+		snip:      regexp.MustCompile(`{{\s*snippet ([^ \t]+)\s*(\[(.*)\])?\s*}}`),
+		unlinkSet: make([]*bf.Node, 0),
+	}
 }
 
 // initConfig reads in config file and ENV variables if set.
-func initConfig() {
+func (ci *codeInj) initConfig() {
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
@@ -100,85 +131,94 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
+	ci.injectDir = strings.TrimRight(ci.injectDir, "/")
+	if !norecur {
+		ci.injectDir = ci.injectDir + "/**"
+	}
+	ci.extensions = strings.Split(ci.extensions[0], ",")
 }
 
-var codeTags = map[string]string{
-	".go":   "go",
-	".js":   "js",
-	".json": "json",
-	".sh":   "shell",
+func (ci *codeInj) injectCode() {
+	nodes := ci.Parse()
+	nodes.Walk(ci.Inject)
+	cInj.Unlink()
+	cInj.Render(nodes)
 }
 
-func injectCode(cmd *cobra.Command, args []string) {
-	cmd.Flags().Parse(args)
-	regex := regexp.MustCompile(`{{\s*snippet ([^ \t]+)\s*(\[(.*)\])?\s*}}`)
-	f, err := ioutil.ReadFile(inject)
+func (ci *codeInj) Parse() *bf.Node {
+	f, err := ioutil.ReadFile(ci.target)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(extensions) != 0 {
+	if len(ci.extensions) != 0 {
 		for k, v := range codeTags {
-			if !inSlice(k, extensions) && !inSlice(v, extensions) {
+			if !inSlice(k, ci.extensions) && !inSlice(v, ci.extensions) {
+				delete(codeTags, k)
+			}
+			k = strings.TrimPrefix(k, ".")
+			if !inSlice(k, ci.extensions) && !inSlice(v, ci.extensions) {
 				delete(codeTags, k)
 			}
 		}
 	}
 	md := bf.New(bf.WithExtensions(bf.FencedCode | bf.Tables | bf.HeadingIDs))
-	unlinkSet := make([]*bf.Node, 0)
-	nodes := md.Parse(f)
-	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
-		// snippet tags will only be in text nodes
-		if !entering || n.Type != bf.Text || !regex.Match(n.Literal) ||
-			n.Parent.Type != bf.Paragraph || n.Parent.Parent.Type != bf.Document {
-			return bf.GoToNext
-		}
+	return md.Parse(f)
+}
 
-		strs := regex.FindSubmatch(n.Literal)
-		mth, exts := strs[1], strings.Split(string(strs[3]), ",")
-		if len(mth) < 2 {
-			return bf.GoToNext
-		}
-		matches, err := filepath.Glob(fmt.Sprintf("%s.*", mth))
+func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
+	// snippet tags will only be in text nodes
+	if !entering || n.Type != bf.Text || !ci.snip.Match(n.Literal) ||
+		n.Parent.Type != bf.Paragraph || n.Parent.Parent.Type != bf.Document {
+		return bf.GoToNext
+	}
+
+	strs := ci.snip.FindSubmatch(n.Literal)
+	mth, exts := strs[1], strings.Split(string(strs[3]), ",")
+	if len(mth) < 2 {
+		return bf.GoToNext
+	}
+	pattern := fmt.Sprintf("%s/%s.*", ci.injectDir, mth)
+	matches, err := doublestar.Glob(pattern)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var count int
+	for _, v := range matches {
+		node, err := codeNode(v, exts)
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
 		}
-		var count int
-		for _, v := range matches {
-			node, err := codeNode(v, exts)
-			if err != nil {
-				log.Println(err)
-			}
-			if node == nil {
-				continue
-			}
+		if node != nil {
 			n.Parent.InsertBefore(node)
 			count++
 		}
-		if !leaveQuotes && count == 0 && n.Parent.Prev.Type == bf.BlockQuote {
-			// Remove leading blockquote if no code was added.
-			unlinkSet = append(unlinkSet, n.Parent.Prev)
-		}
-		if !leaveTags {
-			// Remove snippet insert tag.
-			unlinkSet = append(unlinkSet, n.Parent)
-		}
-		return bf.GoToNext
-	})
-	for _, n := range unlinkSet {
+	}
+	ci.UnlinkNode(n, count)
+	return bf.GoToNext
+}
+
+func (ci *codeInj) UnlinkNode(node *bf.Node, count int) {
+	if !ci.leaveQuotes && count == 0 && node.Parent.Prev.Type == bf.BlockQuote {
+		// Remove leading blockquote if no code was added.
+		ci.unlinkSet = append(ci.unlinkSet, node.Parent.Prev)
+	}
+	if !ci.leaveTags {
+		// Remove snippet insert tag.
+		ci.unlinkSet = append(ci.unlinkSet, node.Parent)
+	}
+}
+
+func (ci codeInj) Unlink() {
+	for _, n := range ci.unlinkSet {
 		n.Unlink()
 	}
 }
 
-type codeInj struct {
-	snip      *regexp.Regexp
-	unlinkSet []*bf.Node
-}
-
 func (ci codeInj) Render(nodes *bf.Node) {
-	if output == "" {
-		output = target
+	if ci.output == "" {
+		ci.output = ci.target
 	}
-	out, err := os.Create(output)
+	out, err := os.Create(ci.output)
 	if err != nil {
 		log.Fatal(err)
 	}
