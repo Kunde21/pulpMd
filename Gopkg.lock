@@ -2,10 +2,10 @@
 
 
 [[projects]]
-  branch = "master"
   name = "github.com/Kunde21/markdownfmt"
   packages = ["markdown"]
-  revision = "cecff1f292061cda5b4838503e04ea174e5301a5"
+  revision = "2175e55a6dfe6184f0bcc595554d374918e29617"
+  version = "v2.0"
 
 [[projects]]
   name = "github.com/bmatcuk/doublestar"
@@ -44,8 +44,8 @@
 [[projects]]
   name = "github.com/magiconair/properties"
   packages = ["."]
-  revision = "a8e9fa9ffe534206df1daaa7e9d5e82ca23db7e0"
-  version = "v1.7.5"
+  revision = "c3beff4c2358b44d0493c7dda585e7db7ff28ae6"
+  version = "v1.7.6"
 
 [[projects]]
   name = "github.com/mattn/go-runewidth"
@@ -101,8 +101,8 @@
 [[projects]]
   name = "github.com/spf13/cast"
   packages = ["."]
-  revision = "acbeb36b902d72a7a4c18e8f3241075e7ab763e4"
-  version = "v1.1.0"
+  revision = "8965335b8c7107321228e3e3702cab9832751bac"
+  version = "v1.2.0"
 
 [[projects]]
   name = "github.com/spf13/cobra"
