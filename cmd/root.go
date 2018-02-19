@@ -52,8 +52,8 @@ func Execute() {
 }
 
 var codeTags = map[string]string{
-	".sh":  "shell",
-	".cpp": "c++",
+	"sh":  "shell",
+	"cpp": "c++",
 }
 
 var (
@@ -253,13 +253,14 @@ func (ci codeInj) Render(nodes *bf.Node) {
 }
 
 func (ci *codeInj) createNode(file string, exts []string) (node *bf.Node, err error) {
-	tag, ok := codeTags[filepath.Ext(file)]
-	if !ok {
-		tag = strings.TrimPrefix(filepath.Ext(file), ".")
-	}
+	tag := strings.TrimPrefix(filepath.Ext(file), ".")
 	// Not in extension filter list
 	if len(exts) > 0 && !inSlice(tag, exts) {
 		return nil, nil
+	}
+
+	if _, ok := codeTags[tag]; ok {
+		tag = codeTags[tag]
 	}
 	inject, err := ioutil.ReadFile(file)
 	if err != nil {
