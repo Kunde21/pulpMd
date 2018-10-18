@@ -27,9 +27,9 @@ import (
 	"github.com/bmatcuk/doublestar"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
+	bf "github.com/russross/blackfriday/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	bf "gopkg.in/russross/blackfriday.v2"
 )
 
 var rootCmd = &cobra.Command{
