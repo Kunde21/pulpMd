@@ -54,4 +54,5 @@ $ pulpMd --target=input.md --output=output.md
 --fileExt   (-e): Extension list.  Can be used to filter "js,go,java" or used to specify the markdown code identifier "aspx:asp".
 --notags    (-n): Leave snippet tags in output.  [To facilitate multiple-pass processing]
 --quotes    (-q): Leave block quotes in output when no code was inserted in the following tag.  [Default cleans up block-quote headings if there's no code to insert]
+--stdin     (-s): Read Stdin for the markdown file to parse.
 ```
