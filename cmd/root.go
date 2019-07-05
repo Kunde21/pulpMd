@@ -59,6 +59,7 @@ var codeTags = map[string]string{
 var (
 	cfgFile string
 	norecur bool
+	stdin   bool
 	cInj    *codeInj
 )
 
@@ -81,16 +82,17 @@ func init() {
 	//flags.BoolVarP(&cInj.quoteMd, "block", "b", false, "Insert markdown as code block.")
 	flags.BoolVarP(&cInj.leaveQuotes, "quotes", "q", false,
 		"Leave block quote when no code was inserted below it.")
+	flags.BoolVarP(&stdin, "stdin", "s", false, "Pass markdown file via stdin")
 
 	//cobra.MarkFlagFilename(persistent, "inject")
 	cobra.MarkFlagFilename(flags, "output")
 	cobra.MarkFlagFilename(flags, "target")
-	cobra.MarkFlagRequired(flags, "target")
 }
 
 type codeInj struct {
 	mdExt       bf.Extensions
 	target      string
+	file        []byte
 	inject      string
 	injectDir   string
 	output      string
@@ -137,6 +139,24 @@ func (ci *codeInj) initConfig() {
 	if !norecur {
 		ci.injectDir = ci.injectDir + "/**"
 	}
+
+	if cInj.target == "" && stdin == false {
+		rootCmd.Usage()
+		log.Fatal("error: 'target' or 'stdin' is required")
+	}
+
+	if cInj.target != "" && stdin == true {
+		rootCmd.Usage()
+		log.Fatal("error: 'target' and 'stdin' cannot be used simultaneously")
+	}
+
+	if stdin {
+		b, err := ioutil.ReadAll(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ci.file = b
+	}
 }
 
 func (ci *codeInj) injectCode() {
@@ -147,9 +167,16 @@ func (ci *codeInj) injectCode() {
 }
 
 func (ci *codeInj) Parse() *bf.Node {
-	f, err := ioutil.ReadFile(ci.target)
-	if err != nil {
-		log.Fatal(err)
+	var f []byte
+	if ci.target != "" {
+		var err error
+		f, err = ioutil.ReadFile(ci.target)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	if len(ci.file) > 0 {
+		f = ci.file
 	}
 	if len(ci.extensions) != 0 {
 		ci.extensions = strings.Split(ci.extensions[0], ",")
@@ -238,12 +265,21 @@ func (ci codeInj) Unlink() {
 }
 
 func (ci codeInj) Render(nodes *bf.Node) {
+	var out *os.File
 	if ci.output == "" {
-		ci.output = ci.target
+		if ci.target != "" {
+			ci.output = ci.target
+		}
+		if len(ci.file) > 0 {
+			out = os.Stdout
+		}
 	}
-	out, err := os.Create(ci.output)
-	if err != nil {
-		log.Fatal(err)
+	if ci.output != "" {
+		var err error
+		out, err = os.Create(ci.output)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	render := markdown.NewRenderer(nil)
 	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
