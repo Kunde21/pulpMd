@@ -201,7 +201,7 @@ func (ci *codeInj) Parse() *bf.Node {
 			ci.extensions = nil
 		}
 	}
-	ci.mdExt = bf.FencedCode | bf.Tables | bf.HeadingIDs
+	ci.mdExt = bf.FencedCode | bf.Tables | bf.HeadingIDs | bf.NoIntraEmphasis
 	return bf.New(bf.WithExtensions(ci.mdExt)).Parse(f)
 }
 
