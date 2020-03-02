@@ -6,13 +6,21 @@ Code block injection for markdown files.
 ## Set snippet tags  
 We use the common double-brace format for the snippet tags:  
 ```
+These all snippets with the name, in alphabetical order:
+
 {{snippet <Snippet Name>}}
 ```
 
 Optionally, you can add a file extension filter to the snippet tag to limit the code to (a) specific language(s).  This will only insert from files named \<Snippet Name>.{js,go,rs}:
 ```
+Prints js, go, rust, in this order:
+
 {{snippet <Snippet Name> [js,go,rs]}}
 ```
+
+Note: `{{snipped FileName []}}` is different semantic than `{{snipped FileName}}`. 
+First prints nothing, second all matches.
+
 ## Create snippets  
 Snippets are matched to the file name, with the code block tagged with the file extension.  
   
