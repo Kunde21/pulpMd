@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Kunde21/markdownfmt/markdown"
@@ -219,17 +220,26 @@ func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
 	if len(mth) < 2 {
 		return bf.GoToNext
 	}
+	hasExts := string(strs[2]) != ""
 	pattern := fmt.Sprintf("%s/%s.*", ci.injectDir, mth)
 	matches, err := doublestar.Glob(pattern)
 	if err != nil {
 		log.Fatal(err)
 	}
 	var count int
+	var ignoreExt bool
 
+	// if there is no extension, print files alhabetically
+	// if there is extensions, print in written order
+	// note: {{snipped FileName []}} is different semantic than  {{snipped FileName}}
+	if !hasExts {
+		sort.Strings(matches)
+		ignoreExt = true
+	}
 	for _, ext := range exts {
 		ext = strings.TrimSpace(ext)
 		for _, v := range matches {
-			node, err := ci.createNode(v, ext)
+			node, err := ci.createNode(v, ext, ignoreExt)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -296,10 +306,10 @@ func (ci codeInj) Render(nodes *bf.Node) {
 	out.Close()
 }
 
-func (ci *codeInj) createNode(file string, ext string) (node *bf.Node, err error) {
+func (ci *codeInj) createNode(file string, ext string, ignoreExt bool) (node *bf.Node, err error) {
 	tag := strings.TrimPrefix(filepath.Ext(file), ".")
 	// Not in extension filter list
-	if tag != ext {
+	if tag != ext && !ignoreExt {
 		return nil, nil
 	}
 
