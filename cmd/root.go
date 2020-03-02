@@ -281,7 +281,7 @@ func (ci codeInj) Render(nodes *bf.Node) {
 			log.Fatal(err)
 		}
 	}
-	render := markdown.NewRenderer(nil)
+	render := markdown.NewRenderer()
 	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
 		return render.RenderNode(out, n, entering)
 	})
