@@ -1,0 +1,38 @@
+pulpMd --target=input.md --output=output.md
+cmp output.md output.golden.md
+
+-- input.md --
+### Here's an example, go goes first:
+
+{{snippet SampleCode [go, js]}}
+
+-- SampleCode.js --
+function SampleFunction() {
+  console.log("Show in markdown");
+}
+
+-- SampleCode.go --
+func SampleFunction() (foo int) {
+    fmt.Println("123");
+    return 3
+}
+
+Nothing checks legality of the go files
+
+-- output.golden.md --
+### Here's an example, go goes first:
+
+```go
+func SampleFunction() (foo int) {
+    fmt.Println("123");
+    return 3
+}
+
+Nothing checks legality of the go files
+```
+
+```js
+function SampleFunction() {
+  console.log("Show in markdown");
+}
+```

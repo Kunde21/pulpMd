@@ -1,0 +1,21 @@
+pulpMd --target=input.md --output=output.md
+cmp output.md output.golden.md
+
+-- input.md --
+### Here's an example:
+
+{{snippet examples/SampleCode [js]}}
+
+-- examples/SampleCode.js --
+function SampleFunction() {
+  console.log("Show in markdown");
+}
+
+-- output.golden.md --
+### Here's an example:
+
+```js
+function SampleFunction() {
+  console.log("Show in markdown");
+}
+```

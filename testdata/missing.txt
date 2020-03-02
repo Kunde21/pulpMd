@@ -1,0 +1,10 @@
+pulpMd --target=input.md --output=output.md
+cmp output.md output.golden.md
+
+-- input.md --
+### Here's a missing file:
+
+{{snippet SampleCode [js]}}
+
+-- output.golden.md --
+### Here's a missing file:

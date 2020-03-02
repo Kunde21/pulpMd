@@ -1,6 +1,8 @@
 # Pulp Markdown  
 Code block injection for markdown files.
 
+[![Build Status](https://travis-ci.org/Kunde21/pulpMd.svg?branch=master)](https://travis-ci.org/Kunde21/pulpMd)
+
 ## Set snippet tags  
 We use the common double-brace format for the snippet tags:  
 ```
