@@ -1,0 +1,25 @@
+pulpMd --target=input.md --output=output.md
+cmp output.md output.golden.md
+
+-- input.md --
+### Here's an example:
+
+{{snippet Sample [md]}}
+
+-- Sample.md --
+##### Header {#custom}
+
+| foo | bar | baz |
+|---|---|---|
+| some_name_foo | barbar | bazbaz |
+| other _rich_ name | bar *bar* | `baz` baz `baz` |
+
+-- output.golden.md --
+### Here's an example:
+
+##### Header {#custom}
+
+| foo               | bar       | baz             |
+|-------------------|-----------|-----------------|
+| some_name_foo     | barbar    | bazbaz          |
+| other *rich* name | bar *bar* | `baz` baz `baz` |

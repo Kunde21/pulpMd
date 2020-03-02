@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -44,11 +45,12 @@ Useful when generating documentation and creating tutorials.`,
 	},
 }
 
-func Execute() {
+func Execute() (code int) {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 var codeTags = map[string]string{
@@ -223,24 +225,28 @@ func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
 		log.Fatal(err)
 	}
 	var count int
-	for _, v := range matches {
-		node, err := ci.createNode(v, exts)
-		if err != nil {
-			fmt.Println(err)
-		}
-		switch {
-		case node == nil:
-		case node.Type == bf.CodeBlock:
-			n.Parent.InsertBefore(node)
-			count++
-		case node.Type == bf.Document:
-			cn := node.FirstChild.Next
-			for ; cn != nil; cn = cn.Next {
-				n.Parent.InsertBefore(cn.Prev)
+
+	for _, ext := range exts {
+		ext = strings.TrimSpace(ext)
+		for _, v := range matches {
+			node, err := ci.createNode(v, ext)
+			if err != nil {
+				fmt.Println(err)
 			}
-			n.Parent.InsertBefore(node.LastChild)
-			count++
-		default:
+			switch {
+			case node == nil:
+			case node.Type == bf.CodeBlock:
+				n.Parent.InsertBefore(node)
+				count++
+			case node.Type == bf.Document:
+				cn := node.FirstChild.Next
+				for ; cn != nil; cn = cn.Next {
+					n.Parent.InsertBefore(cn.Prev)
+				}
+				n.Parent.InsertBefore(node.LastChild)
+				count++
+			default:
+			}
 		}
 	}
 	ci.UnlinkNode(n, count)
@@ -281,17 +287,19 @@ func (ci codeInj) Render(nodes *bf.Node) {
 			log.Fatal(err)
 		}
 	}
+	buffer := bytes.NewBuffer(nil)
 	render := markdown.NewRenderer()
 	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
-		return render.RenderNode(out, n, entering)
+		return render.RenderNode(buffer, n, entering)
 	})
+	out.Write(bytes.TrimLeft(buffer.Bytes(), "\n"))
 	out.Close()
 }
 
-func (ci *codeInj) createNode(file string, exts []string) (node *bf.Node, err error) {
+func (ci *codeInj) createNode(file string, ext string) (node *bf.Node, err error) {
 	tag := strings.TrimPrefix(filepath.Ext(file), ".")
 	// Not in extension filter list
-	if len(exts) > 0 && !inSlice(tag, exts) {
+	if tag != ext {
 		return nil, nil
 	}
 

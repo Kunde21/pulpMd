@@ -14,8 +14,16 @@
 
 package main
 
-import "github.com/Kunde21/pulpMd/cmd"
+import (
+	"os"
+
+	"github.com/Kunde21/pulpMd/cmd"
+)
 
 func main() {
-	cmd.Execute()
+	os.Exit(cmd.Execute())
+}
+
+func main1() (code int) {
+	return cmd.Execute()
 }

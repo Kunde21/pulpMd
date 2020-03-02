@@ -1,0 +1,8 @@
+pulpMd --target=input.md --output=output.md
+cmp output.md output.golden.md
+
+-- input.md --
+Foo bar baz
+
+-- output.golden.md --
+Foo bar baz
