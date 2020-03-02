@@ -1,7 +1,7 @@
 github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/Kunde21/markdownfmt v0.1.5 h1:4ARmM88uh/O+U9vUuGFvXYLsoHGYcC6o+5SizH5ZTpY=
-github.com/Kunde21/markdownfmt v0.1.5/go.mod h1:klKoOJ+0s67M+fZcA05yDM1iqJETZG3FmjeujNkzh4I=
+github.com/Kunde21/markdownfmt v0.1.6 h1:ElQ4ZsxyCfzAXo3EKnFTTlvedLjLggQ1BJjsgY9hd4A=
+github.com/Kunde21/markdownfmt v0.1.6/go.mod h1:klKoOJ+0s67M+fZcA05yDM1iqJETZG3FmjeujNkzh4I=
 github.com/bmatcuk/doublestar v1.1.1 h1:YroD6BJCZBYx06yYFEWvUuKVWQn3vLLQAVmDmvTSaiQ=
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

@@ -2,7 +2,7 @@ module github.com/Kunde21/pulpMd
 
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
-	github.com/Kunde21/markdownfmt v0.1.5
+	github.com/Kunde21/markdownfmt v0.1.6
 	github.com/bmatcuk/doublestar v1.1.1
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
