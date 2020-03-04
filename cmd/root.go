@@ -25,13 +25,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Kunde21/markdownfmt/markdown"
+	"github.com/Kunde21/markdownfmt/v2/markdown"
 	"github.com/bmatcuk/doublestar"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
-	bf "github.com/russross/blackfriday/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 )
 
 var rootCmd = &cobra.Command{
@@ -42,7 +44,10 @@ Create and test your example code, then load it into your markdown pages.
 
 Useful when generating documentation and creating tutorials.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cInj.injectCode()
+		err := cInj.injectCode()
+		if err != nil {
+			log.Fatal(err)
+		}
 	},
 }
 
@@ -93,7 +98,6 @@ func init() {
 }
 
 type codeInj struct {
-	mdExt       bf.Extensions
 	target      string
 	file        []byte
 	inject      string
@@ -104,18 +108,30 @@ type codeInj struct {
 	leaveQuotes bool
 	quoteMd     bool
 	snip        *regexp.Regexp
-	unlinkSet   []*bf.Node
+	unlinkSet   []ast.Node
+
+	originSource []byte
+	mapSources   map[ast.Node][]byte
 }
 
 func NewCodeInject() *codeInj {
 	return &codeInj{
-		snip:      regexp.MustCompile(`{{\s*snippet ([^ \t]+)\s*(\[(.*)\])?\s*}}`),
-		unlinkSet: make([]*bf.Node, 0),
+		snip:       regexp.MustCompile(`{{\s*snippet ([^ \t]+)\s*(\[(.*)\])?\s*}}`),
+		unlinkSet:  make([]ast.Node, 0),
+		mapSources: make(map[ast.Node][]byte),
 	}
 }
 
 // initConfig reads in config file and ENV variables if set.
 func (ci *codeInj) initConfig() {
+	err := ci.initConfigErrors()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+}
+
+func (ci *codeInj) initConfigErrors() error {
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
@@ -123,8 +139,7 @@ func (ci *codeInj) initConfig() {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			return err
 		}
 
 		// Search config in home directory with name ".pulpMd" (without extension).
@@ -145,42 +160,55 @@ func (ci *codeInj) initConfig() {
 
 	if cInj.target == "" && stdin == false {
 		rootCmd.Usage()
-		log.Fatal("error: 'target' or 'stdin' is required")
+		return errors.New("'target' or 'stdin' is required")
 	}
 
 	if cInj.target != "" && stdin == true {
 		rootCmd.Usage()
-		log.Fatal("error: 'target' and 'stdin' cannot be used simultaneously")
+		return errors.New("'target' and 'stdin' cannot be used simultaneously")
 	}
 
 	if stdin {
 		b, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		ci.file = b
 	}
+	return nil
 }
 
-func (ci *codeInj) injectCode() {
-	nodes := ci.Parse()
-	nodes.Walk(ci.Inject)
+func (ci *codeInj) injectCode() error {
+	nodes, err := ci.Parse()
+	if err != nil {
+		return err
+	}
+	err = ast.Walk(nodes, ci.Inject)
+	if err != nil {
+		return err
+	}
+
 	cInj.Unlink()
-	cInj.Render(nodes)
+	err = cInj.Render(nodes)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (ci *codeInj) Parse() *bf.Node {
+func (ci *codeInj) Parse() (ast.Node, error) {
 	var f []byte
 	if ci.target != "" {
 		var err error
 		f, err = ioutil.ReadFile(ci.target)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 	}
 	if len(ci.file) > 0 {
 		f = ci.file
 	}
+	ci.originSource = f
 	if len(ci.extensions) != 0 {
 		ci.extensions = strings.Split(ci.extensions[0], ",")
 		for k, v := range codeTags {
@@ -204,27 +232,57 @@ func (ci *codeInj) Parse() *bf.Node {
 			ci.extensions = nil
 		}
 	}
-	ci.mdExt = bf.FencedCode | bf.Tables | bf.HeadingIDs | bf.NoIntraEmphasis
-	return bf.New(bf.WithExtensions(ci.mdExt)).Parse(f)
+	return markdown.NewParser().Parse(text.NewReader(f)), nil
 }
 
-func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
-	// snippet tags will only be in text nodes
-	if !entering || n.Type != bf.Text || !ci.snip.Match(n.Literal) ||
-		n.Parent.Type != bf.Paragraph || n.Parent.Parent.Type != bf.Document {
-		return bf.GoToNext
+// snippet is split to more siblings
+func (ci *codeInj) IsMatchWithSiblings(n ast.Node) (bool, []byte, []ast.Node) {
+	var nodes []ast.Node
+	var joined []byte
+	i := n
+	for true {
+		if i == nil {
+			return false, nil, nil
+		}
+		tnode, is := i.(*ast.Text)
+		if !is {
+			return false, nil, nil
+		}
+		literal := tnode.Segment.Value(ci.originSource)
+		joined = append(joined, literal...)
+		nodes = append(nodes, tnode)
+		if ci.snip.Match(joined) {
+			return true, joined, nodes
+		}
+
+		i = i.NextSibling()
 	}
 
-	strs := ci.snip.FindSubmatch(n.Literal)
+	return false, nil, nil
+}
+
+func (ci *codeInj) Inject(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	// snippet tags will only be in text nodes
+	if !entering {
+		return ast.WalkContinue, nil
+	}
+
+	isMatch, literal, nodes := ci.IsMatchWithSiblings(n)
+	if !isMatch ||
+		n.Parent().Kind() != ast.KindParagraph || n.Parent().Parent().Kind() != ast.KindDocument {
+		return ast.WalkContinue, nil
+	}
+
+	strs := ci.snip.FindSubmatch(literal)
 	mth, exts := strs[1], strings.Split(string(strs[3]), ",")
 	if len(mth) < 2 {
-		return bf.GoToNext
+		return ast.WalkContinue, nil
 	}
 	hasExts := string(strs[2]) != ""
 	pattern := fmt.Sprintf("%s/%s.*", ci.injectDir, mth)
 	matches, err := doublestar.Glob(pattern)
 	if err != nil {
-		log.Fatal(err)
+		return ast.WalkStop, err
 	}
 	var count int
 	var ignoreExt bool
@@ -241,46 +299,47 @@ func (ci *codeInj) Inject(n *bf.Node, entering bool) bf.WalkStatus {
 		for _, v := range matches {
 			node, err := ci.createNode(v, ext, ignoreExt)
 			if err != nil {
-				fmt.Println(err)
+				return ast.WalkStop, err
 			}
 			switch {
 			case node == nil:
-			case node.Type == bf.CodeBlock:
-				n.Parent.InsertBefore(node)
+			case node.Kind() == ast.KindCodeBlock:
+				n.Parent().Parent().InsertBefore(n.Parent().Parent(), n.Parent(), node)
 				count++
-			case node.Type == bf.Document:
-				cn := node.FirstChild.Next
-				for ; cn != nil; cn = cn.Next {
-					n.Parent.InsertBefore(cn.Prev)
+			case node.Kind() == ast.KindDocument:
+				cn := node.FirstChild().NextSibling()
+				for ; cn != nil; cn = cn.NextSibling() {
+					n.Parent().Parent().InsertBefore(n.Parent().Parent(), n.Parent(), cn.PreviousSibling())
 				}
-				n.Parent.InsertBefore(node.LastChild)
+				n.Parent().Parent().InsertBefore(n.Parent().Parent(), n.Parent(), node.LastChild())
 				count++
 			default:
 			}
 		}
 	}
-	ci.UnlinkNode(n, count)
-	return bf.GoToNext
+	ci.UnlinkNode(nodes, count)
+	return ast.WalkContinue, nil
 }
 
-func (ci *codeInj) UnlinkNode(node *bf.Node, count int) {
+func (ci *codeInj) UnlinkNode(nodes []ast.Node, count int) {
 	// Remove leading blockquote if no code was added.
-	if !ci.leaveQuotes && count == 0 && node.Parent.Prev.Type == bf.BlockQuote {
-		ci.unlinkSet = append(ci.unlinkSet, node.Parent.Prev)
+	node := nodes[0]
+	if !ci.leaveQuotes && count == 0 && node.Parent().PreviousSibling().Kind() == ast.KindBlockquote {
+		ci.unlinkSet = append(ci.unlinkSet, node.Parent().PreviousSibling())
 	}
 	// Remove snippet insert tag.
 	if !ci.leaveTags {
-		ci.unlinkSet = append(ci.unlinkSet, node.Parent)
+		ci.unlinkSet = append(ci.unlinkSet, node.Parent())
 	}
 }
 
 func (ci codeInj) Unlink() {
 	for _, n := range ci.unlinkSet {
-		n.Unlink()
+		n.Parent().RemoveChild(n.Parent(), n)
 	}
 }
 
-func (ci codeInj) Render(nodes *bf.Node) {
+func (ci codeInj) Render(nodes ast.Node) error {
 	var out *os.File
 	if ci.output == "" {
 		if ci.target != "" {
@@ -294,19 +353,31 @@ func (ci codeInj) Render(nodes *bf.Node) {
 		var err error
 		out, err = os.Create(ci.output)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
+	defer out.Close()
 	buffer := bytes.NewBuffer(nil)
 	render := markdown.NewRenderer()
-	nodes.Walk(func(n *bf.Node, entering bool) bf.WalkStatus {
-		return render.RenderNode(buffer, n, entering)
+	err := ast.Walk(nodes, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		source, has := ci.mapSources[n]
+		if has {
+			return render.RenderSingle(buffer, source, n, entering), nil
+		} else {
+			return render.RenderSingle(buffer, ci.originSource, n, entering), nil
+		}
 	})
-	out.Write(bytes.TrimLeft(buffer.Bytes(), "\n"))
-	out.Close()
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(bytes.TrimLeft(buffer.Bytes(), "\n"))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (ci *codeInj) createNode(file string, ext string, ignoreExt bool) (node *bf.Node, err error) {
+func (ci *codeInj) createNode(file string, ext string, ignoreExt bool) (ast.Node, error) {
 	tag := strings.TrimPrefix(filepath.Ext(file), ".")
 	// Not in extension filter list
 	if tag != ext && !ignoreExt {
@@ -316,22 +387,29 @@ func (ci *codeInj) createNode(file string, ext string, ignoreExt bool) (node *bf
 	if _, ok := codeTags[tag]; ok {
 		tag = codeTags[tag]
 	}
+
 	inject, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read code file %s", file)
 	}
-	if tag == "md" {
-		return bf.New(bf.WithExtensions(ci.mdExt)).Parse(inject), nil
+	if tag != "md" {
+		// fake source here
+		source := "```" + tag + "\n"
+		source += string(inject)
+		source += "\n```"
+		inject = []byte(source)
 	}
-	node = bf.NewNode(bf.CodeBlock)
-	node.CodeBlockData = bf.CodeBlockData{
-		IsFenced:    true,
-		FenceChar:   '`',
-		FenceLength: 3,
-		Info:        []byte(tag),
+
+	nodes := markdown.NewParser().Parse(text.NewReader(inject))
+	err = ast.Walk(nodes, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		ci.mapSources[n] = inject
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	node.Literal = inject
-	return node, nil
+
+	return nodes, nil
 }
 
 func inSlice(needle string, haystack []string) bool {
